@@ -1,0 +1,10 @@
+[package]
+name = "fastly-shadow-load-rust"
+version = "0.1.0"
+authors = ["Tom Gallacher <tomgallacher23@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+tokio = "0.1"
+tokio-codec = "0.1"
+serde_json = "1.0"
