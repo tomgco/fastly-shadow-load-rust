@@ -31,14 +31,11 @@ fn fetch_url(client: &Client<HttpConnector>, url: &str, host_override: String, m
     let final_req = req.body(Body::empty())
         .expect("request builder");
 
-    let future = client.request(final_req);
-
-    future
-        // If all good, just tell the user...
+    client
+        .request(final_req)
         .map(|_| {
             println!("Done.");
         })
-        // If there was an error, let the user know...
         .map_err(|err| {
             eprintln!("Error {}", err);
         })
@@ -54,7 +51,6 @@ fn main() -> Result<(), Box<std::error::Error>> {
     let socket = TcpListener::bind(&addr)?;
     println!("Listening on: {}", addr);
 
-
     let client = client.clone();
     let done = socket
         .incoming()
@@ -67,12 +63,19 @@ fn main() -> Result<(), Box<std::error::Error>> {
             let processor = reader
                 .for_each(move |line| {
                     let v: Value = serde_json::from_str(&line)?;
+                    let event = &v["event"];
+                    let url = event["url"].as_str().unwrap();
+                    let method = event["request"].as_str().unwrap();
 
                     for _i in 0..times {
-                        println!("v: {}", "url");
-                        let event = &v["event"];
-                        println!("e: {}", event["url"]);
-                        tokio::spawn(fetch_url(&client, event["url"].as_str().unwrap(), "".to_string(), event["request"].as_str().unwrap()));
+                        tokio::spawn(
+                            fetch_url(
+                                &client,
+                                url,
+                                "".to_string(),
+                                method
+                            )
+                        );
                     }
                     Ok(())
                 })
