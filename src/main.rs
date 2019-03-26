@@ -1,11 +1,15 @@
 extern crate tokio;
 extern crate tokio_codec;
+extern crate hyper;
 
 use tokio::codec::Decoder;
 use tokio::net::TcpListener;
 use tokio::prelude::*;
 use tokio_codec::LinesCodec;
 use serde_json::Value;
+
+use hyper::{Body, Client, Request};
+use hyper::rt::{self};
 
 use std::env;
 use std::net::SocketAddr;
@@ -36,6 +40,19 @@ fn main() -> Result<(), Box<std::error::Error>> {
                 .for_each(|line| {
                     let v: Value = serde_json::from_str(&line)?;
                     println!("v: {}", v["hello"]);
+                    for i in 1..5 {
+                        tokio::spawn(rt::lazy(move || {
+                            let client = Client::new();
+                            let req = Request::builder()
+                                .method("GET")
+                                .uri("http://127.0.0.1:9900")
+                                .body(Body::from("Hallo!"))
+                                .expect("request builder");
+                            let future = client.request(req);
+                            println!("Making http req {} times", i);
+                            Ok(())
+                        }));
+                    }
                     Ok(())
                 })
                 // After our copy operation is complete we just print out some helpful
