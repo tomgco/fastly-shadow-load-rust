@@ -25,7 +25,7 @@ fn fetch_url(client: &Client<HttpConnector>, url: &str, host_override: String, m
         .header("User-Agent", "Fastly-Shadow-Traffic/2.0(Conde Nast International)");
 
     if host_override != "" {
-        req.header("Host", "google.com");
+        req.header("Host", host_override);
     }
 
     let final_req = req.body(Body::empty())
