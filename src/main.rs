@@ -9,19 +9,34 @@ use tokio::prelude::*;
 use tokio_codec::LinesCodec;
 use serde_json::Value;
 
-use hyper::{Body, Client, Request, Uri};
+use hyper::{Body, Client, Request};
 use hyper::client::HttpConnector;
 
 use std::env;
 use std::net::SocketAddr;
 
-fn fetch_url(client: &Client<HttpConnector>, url: hyper::Uri) -> impl Future<Item=(), Error=()> {
-    client
-        // Fetch the url...
-        .get(url)
+fn fetch_url(client: &Client<HttpConnector>, url: &str, host_override: String, method: &str) -> impl Future<Item=(), Error=()> {
+    let mut req = Request::builder();
+
+    println!("{}", url);
+
+    req.method(method)
+        .uri(url)
+        .header("User-Agent", "Fastly-Shadow-Traffic/2.0(Conde Nast International)");
+
+    if host_override != "" {
+        req.header("Host", "google.com");
+    }
+
+    let final_req = req.body(Body::empty())
+        .expect("request builder");
+
+    let future = client.request(final_req);
+
+    future
         // If all good, just tell the user...
         .map(|_| {
-            println!("\n\nDone.");
+            println!("Done.");
         })
         // If there was an error, let the user know...
         .map_err(|err| {
@@ -54,8 +69,10 @@ fn main() -> Result<(), Box<std::error::Error>> {
                     let v: Value = serde_json::from_str(&line)?;
 
                     for _i in 0..times {
-                        println!("v: {}", v["hello"]);
-                        tokio::spawn(fetch_url(&client, "http://127.0.0.1:9900".parse::<Uri>().unwrap()));
+                        println!("v: {}", "url");
+                        let event = &v["event"];
+                        println!("e: {}", event["url"]);
+                        tokio::spawn(fetch_url(&client, event["url"].as_str().unwrap(), "".to_string(), event["request"].as_str().unwrap()));
                     }
                     Ok(())
                 })
