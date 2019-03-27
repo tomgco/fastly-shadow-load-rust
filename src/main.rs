@@ -53,6 +53,11 @@ fn main() -> Result<(), Box<std::error::Error>> {
                                     .long("listen")
                                     .help("Address and port which the syslog server will bind to")
                                     .default_value("127.0.0.1:8080"))
+                        .arg(Arg::with_name("filter_hit")
+                                    .short("f")
+                                    .long("filterHit")
+                                    .help("Filters out cache hits. By default it does not filter out x-cache: HIT")
+                                    .default_value("false"))
                         .arg(Arg::with_name("times")
                                     .short("x")
                                     .long("times")
@@ -74,6 +79,7 @@ fn main() -> Result<(), Box<std::error::Error>> {
     let addr = matches.value_of("listen").unwrap();
     let times = matches.value_of("times").unwrap().parse::<i32>().unwrap();
     let host_override = matches.value_of("host").unwrap().to_owned();
+    let filter_hit = matches.value_of("host").unwrap().parse::<bool>().to_owned();
 
     let addr = addr.parse::<SocketAddr>()?;
 
@@ -82,6 +88,7 @@ fn main() -> Result<(), Box<std::error::Error>> {
 
     let client = client.clone();
     let host_override = host_override.clone();
+    let filter_hit = filter_hit.clone();
 
     let done = socket
         .incoming()
@@ -92,25 +99,32 @@ fn main() -> Result<(), Box<std::error::Error>> {
 
             let client = client.clone();
             let host_override = host_override.clone();
+            let filter_hit = filter_hit.clone();
             let processor = reader
                 .for_each(move |line| {
+                    let filter_hit = filter_hit.clone();
                     let v: Value = serde_json::from_str(&line)?;
                     let event = &v["event"];
-                    let url = event["url"].as_str().unwrap();
-                    let method = event["request"].as_str().unwrap();
+                    let req_hit = event["hit"].as_bool().unwrap();
+                    if req_hit && filter_hit.unwrap() {
+                        let url = event["url"].as_str().unwrap();
+                        let method = event["request"].as_str().unwrap();
 
-                    for _i in 0..times {
-                        let host_override = host_override.clone();
-                        tokio::spawn(
-                            fetch_url(
-                                &client,
-                                url,
-                                host_override,
-                                method
-                            )
-                        );
+                        for _i in 0..times {
+                            let host_override = host_override.clone();
+                            tokio::spawn(
+                                fetch_url(
+                                    &client,
+                                    url,
+                                    host_override,
+                                    method
+                                )
+                            );
+                        }
+                        Ok(())
+                    } else {
+                        Ok(())
                     }
-                    Ok(())
                 })
                 // After our copy operation is complete we just print out some helpful
                 // information.
