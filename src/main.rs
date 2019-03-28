@@ -17,10 +17,8 @@ use hyper::client::HttpConnector;
 
 use std::net::SocketAddr;
 
-fn fetch_url(client: &Client<HttpConnector>, url: &str, host_override: String, method: &str) -> impl Future<Item=(), Error=()> {
+fn fetch_url(client: &Client<HttpConnector>, url: String, host_override: String, method: &str) -> impl Future<Item=(), Error=()> {
     let mut req = Request::builder();
-
-    println!("{}", url);
 
     req.method(method)
         .uri(url)
@@ -35,12 +33,36 @@ fn fetch_url(client: &Client<HttpConnector>, url: &str, host_override: String, m
 
     client
         .request(final_req)
-        .map(|_| {
-            println!("Done.");
-        })
+        .map(|_| {})
         .map_err(|err| {
-            eprintln!("Error {}", err);
+            eprintln!("E: {}", err);
         })
+}
+
+fn nom(client: Client<HttpConnector>, target: String, host_override: String, times: i32, filter_hit: bool) -> impl FnMut(String) -> Result<(),std::io::Error> {
+   move |line: String| {
+        let v: Value = serde_json::from_str(&line)?;
+        let event = &v["event"];
+        let req_hit = event["hit"].as_str().unwrap_or("false");
+        if req_hit == "true" && filter_hit {
+            Ok(())
+        } else {
+            let url = event["url"].as_str().unwrap_or("/");
+            let method = event["request"].as_str().unwrap_or("GET");
+            for _i in 0..times {
+                let host_override = host_override.clone();
+                tokio::spawn(
+                    fetch_url(
+                        &client,
+                        format!("{}{}", target, url),
+                        host_override,
+                        method
+                    )
+                );
+            }
+            Ok(())
+        }
+    }
 }
 
 fn main() -> Result<(), Box<std::error::Error>> {
@@ -78,17 +100,14 @@ fn main() -> Result<(), Box<std::error::Error>> {
 
     let addr = matches.value_of("listen").unwrap();
     let times = matches.value_of("times").unwrap().parse::<i32>().unwrap();
+    let filter_hit = matches.value_of("filter_hit").unwrap().parse::<bool>().unwrap();
     let host_override = matches.value_of("host").unwrap().to_owned();
-    let filter_hit = matches.value_of("host").unwrap().parse::<bool>().to_owned();
+    let target = matches.value_of("target").unwrap().to_owned();
 
     let addr = addr.parse::<SocketAddr>()?;
 
     let socket = TcpListener::bind(&addr)?;
     println!("Listening on: {}", addr);
-
-    let client = client.clone();
-    let host_override = host_override.clone();
-    let filter_hit = filter_hit.clone();
 
     let done = socket
         .incoming()
@@ -96,36 +115,9 @@ fn main() -> Result<(), Box<std::error::Error>> {
         .for_each(move |socket| {
             let framed = LinesCodec::new().framed(socket);
             let (_writer, reader) = framed.split();
-
-            let client = client.clone();
-            let host_override = host_override.clone();
-            let filter_hit = filter_hit.clone();
+            let nom = nom(client.clone(), target.clone(), host_override.clone(), times, filter_hit);
             let processor = reader
-                .for_each(move |line| {
-                    let filter_hit = filter_hit.clone();
-                    let v: Value = serde_json::from_str(&line)?;
-                    let event = &v["event"];
-                    let req_hit = event["hit"].as_bool().unwrap();
-                    if req_hit && filter_hit.unwrap() {
-                        let url = event["url"].as_str().unwrap();
-                        let method = event["request"].as_str().unwrap();
-
-                        for _i in 0..times {
-                            let host_override = host_override.clone();
-                            tokio::spawn(
-                                fetch_url(
-                                    &client,
-                                    url,
-                                    host_override,
-                                    method
-                                )
-                            );
-                        }
-                        Ok(())
-                    } else {
-                        Ok(())
-                    }
-                })
+                .for_each(nom)
                 // After our copy operation is complete we just print out some helpful
                 // information.
                 .and_then(|()| {
