@@ -22,14 +22,13 @@ fn fetch_url(client: &Client<HttpConnector>, url: String, host_override: String,
 
     req.method(method)
         .uri(url)
-        .header("User-Agent", "Fastly-Shadow-Traffic/2.0(Conde Nast International)");
+        .header("User-Agent", "Fastly-Shadow-Traffic/2.0(yld.io)");
 
     if host_override != "" {
         req.header("Host", host_override);
     }
 
-    let final_req = req.body(Body::empty())
-        .expect("request builder");
+    let final_req = req.body(Body::empty()).unwrap();
 
     client
         .request(final_req)
